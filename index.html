@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baby Art Splash</title>
+<style>
+  :root { --paper: #FFF4DC; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper);
+    font-family: "Yu Gothic UI", "Meiryo", "Hiragino Sans", sans-serif; color: #3b3226;
+    user-select: none; -webkit-user-select: none; }
+  body.playing { cursor: none; }
+  #paper { position: fixed; left: 0; top: 0; display: block; }
+
+  /* 数字などの一時表示(キャンバスの外なので、保存画像には入らない) */
+  #fx { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .digit { position: absolute; font-weight: 900; line-height: 1;
+    font-family: "Arial Rounded MT Bold", "Arial Black", Arial, sans-serif;
+    font-size: min(34vh, 320px);
+    -webkit-text-stroke: 0.06em #fff; paint-order: stroke fill;
+    text-shadow: 0 0.04em 0.08em rgba(0,0,0,.25);
+    transform: translate(-50%, -50%) scale(.3); opacity: 0;
+    animation: pop 1.25s ease-out forwards; }
+  @keyframes pop {
+    0%   { transform: translate(-50%, -50%) scale(.3);  opacity: 0; }
+    18%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+    30%  { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+    80%  { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+    100% { transform: translate(-50%, -50%) scale(.92);  opacity: 0; }
+  }
+
+  /* 大人向けの表示(キャンバスの外なので、保存画像には入らない) */
+  #parentBar { position: fixed; left: 50%; bottom: 10px; transform: translateX(-50%);
+    display: none; align-items: center; gap: 10px; padding: 7px 16px 9px; border-radius: 999px;
+    background: rgba(40,34,26,.55); color: #fff; font-size: 13px; opacity: .6;
+    cursor: pointer; white-space: nowrap; overflow: hidden; }
+  #parentBar:hover { opacity: .95; }
+  body.playing #parentBar { display: flex; }
+  #holdBar { position: absolute; left: 0; bottom: 0; height: 4px; width: 0; background: #ffd24a; }
+
+  .screen { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 14px; padding: 24px; text-align: center; background: var(--paper); }
+  .screen.hidden { display: none; }
+  h1 { margin: 0; font-size: clamp(32px, 6vw, 56px); letter-spacing: .02em;
+    background: linear-gradient(90deg,#e53935,#ff9a1f,#f5c400,#4cb944,#2f6fde,#8e44d6);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lead { margin: 0; font-size: 18px; }
+  .note { max-width: 640px; font-size: 14px; line-height: 1.7; text-align: left;
+    background: rgba(255,255,255,.7); border-radius: 12px; padding: 12px 18px; }
+  .note b { color: #b23b2f; }
+  .btn { font: inherit; font-size: 18px; padding: 12px 28px; border: 0; border-radius: 999px;
+    background: #fff; color: #3b3226; box-shadow: 0 2px 0 rgba(0,0,0,.18); cursor: pointer; }
+  .btn:hover { filter: brightness(.97); }
+  .btn.primary { background: #2f6fde; color: #fff; }
+  .btn.big { font-size: 22px; padding: 16px 40px; }
+  .btn.armed { background: #e53935; color: #fff; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  #preview { max-width: min(78vw, 1100px); max-height: 62vh; border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.25); background: #fff; border: 8px solid #fff; }
+  #resultMsg { min-height: 1.4em; font-size: 15px; }
+</style>
+</head>
+<body>
+<canvas id="paper"></canvas>
+<div id="fx"></div>
+
+<div id="parentBar" title="ここを長押しでも終了できます">
+  <span id="barText">おとなの方へ: Esc を3秒長押し(またはここを長押し)で終了</span>
+  <span id="barTime">5:00</span>
+  <div id="holdBar"></div>
+</div>
+
+<section id="startScreen" class="screen">
+  <h1>Baby Art Splash</h1>
+  <p class="lead">キーボードを押すと、色の名前の声といっしょに絵の具が広がります。</p>
+  <div class="note">
+    <b>おとなの方へ</b><br>
+    ・必ず大人が隣にいる時にお使いください。<br>
+    ・Windowsキー、Alt+Tab、Ctrl+W などはブラウザでは完全には止められません(Ctrl+W は確認が出ます)。<br>
+    ・はじめると全画面になります。<b>Esc を3秒長押し</b>で、途中でも終了できます。<br>
+    ・5分たつと自動で止まり、できあがりの絵を保存できます。<br>
+    ・音が出ます。音量を確認してからはじめてください。
+  </div>
+  <button id="startBtn" class="btn primary big" tabindex="-1">はじめる(全画面)</button>
+</section>
+
+<section id="resultScreen" class="screen hidden">
+  <h1>できあがり!</h1>
+  <img id="preview" alt="赤ちゃんの作品">
+  <div id="resultMsg"></div>
+  <div class="row">
+    <button id="saveBtn" class="btn primary" tabindex="-1">画像を保存(PNG)</button>
+    <button id="contBtn" class="btn" tabindex="-1">続ける</button>
+    <button id="newBtn" class="btn" tabindex="-1">新しい紙で始める</button>
+    <button id="quitBtn" class="btn" tabindex="-1">終わる</button>
+  </div>
+</section>
+
+<script>
+(() => {
+'use strict';
+
+/* =========================================================
+   設定
+   ========================================================= */
+const SESSION_SECONDS = 300;      // 1回の長さ(5分)
+const HOLD_MS         = 3000;     // 終了の長押し時間
+const VISUAL_GAP_MS   = 40;       // これより短い間隔の入力は間引く(絵)
+const VOICE_GAP_MS    = 320;      // 声は最低この間隔をあけ、最新の1つだけ鳴らす
+const PAPER           = '#FFF4DC';
+
+/* 声を録音ファイルに差し替えたい時はここに書く。
+   キーは「単語を小文字にしたもの」(blue, one, heart, paw, splash, up ...)。
+   例: blue: "sounds/blue.mp3"
+   書かれていない単語は、ブラウザ標準の読み上げ(英語)になる。 */
+const AUDIO_OVERRIDES = {
+  // blue: "sounds/blue.mp3",
+};
+
+/* =========================================================
+   色(文字キー → 色)
+   ========================================================= */
+const COLORS = {
+  A: ['Aqua',        '#4CCFE8'], B: ['Blue',      '#2F6FDE'], C: ['Coral',     '#FF7F6B'],
+  E: ['Emerald',     '#138A52'], F: ['Fuchsia',   '#E040FB'], G: ['Green',     '#4CB944'],
+  I: ['Indigo',      '#4B2E9E'], J: ['Jade',      '#5CC8A0'], K: ['Khaki',     '#C3B26B'],
+  L: ['Lime',        '#B5E02B'], M: ['Magenta',   '#C2187A'], N: ['Navy',      '#1B2A6B'],
+  O: ['Orange',      '#FF9A1F'], P: ['Pink',      '#FF8FB8'], R: ['Red',       '#E53935'],
+  S: ['Silver',      '#B8BEC6'], T: ['Turquoise', '#1EC8B4'], U: ['Ultramarine','#3A4FD6'],
+  V: ['Violet',      '#8E44D6'], W: ['White',     '#FFFFFF'], Y: ['Yellow',    '#FFD21F'],
+};
+const MARK_COLORS = Object.entries(COLORS).filter(([k]) => k !== 'W').map(([, v]) => v[1]);
+const RAINBOW = ['#E53935', '#FF9A1F', '#FFD21F', '#4CB944', '#2F6FDE', '#4B2E9E', '#8E44D6'];
+const DIGIT_WORDS = ['Zero','One','Two','Three','Four','Five','Six','Seven','Eight','Nine'];
+
+/* 無視するキー(押しても何も起きない) */
+const IGNORE = new Set([
+  'ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight','MetaLeft','MetaRight',
+  'CapsLock','NumLock','ScrollLock','ContextMenu','AltGraph','Fn','FnLock','OS',
+  'Convert','NonConvert','KanaMode','Lang1','Lang2','Lang3','Lang4','Lang5',
+]);
+
+/* =========================================================
+   ユーティリティ
+   ========================================================= */
+const $ = id => document.getElementById(id);
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const nextFrame = () => new Promise(r => requestAnimationFrame(r));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* =========================================================
+   キャンバス
+   ========================================================= */
+const cv = $('paper');
+const ctx = cv.getContext('2d');
+const tmp = document.createElement('canvas');
+const tctx = tmp.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+
+function fillPaper() {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.restore();
+}
+
+function sizeCanvas(keepContent) {
+  const nw = window.innerWidth, nh = window.innerHeight;
+  const ndpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (nw === W && nh === H && ndpr === DPR) return;
+  let old = null, ow = 0, oh = 0;
+  if (keepContent && W) {
+    old = document.createElement('canvas');
+    old.width = cv.width; old.height = cv.height;
+    old.getContext('2d').drawImage(cv, 0, 0);
+    ow = W; oh = H;
+  }
+  W = nw; H = nh; DPR = ndpr;
+  cv.width = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px';
+  cv.style.height = H + 'px';
+  tmp.width = cv.width; tmp.height = cv.height;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  fillPaper();
+  if (old) ctx.drawImage(old, (W - ow) / 2, (H - oh) / 2, ow, oh);
+}
+window.addEventListener('resize', () => sizeCanvas(true));
+
+/* =========================================================
+   アニメーション管理
+   ========================================================= */
+const anims = [];
+let rafId = 0;
+function addAnim(a) {
+  anims.push(a);
+  if (!rafId) rafId = requestAnimationFrame(tick);
+}
+function tick(now) {
+  for (let i = anims.length - 1; i >= 0; i--) {
+    if (anims[i].step(now)) anims.splice(i, 1);
+  }
+  rafId = anims.length ? requestAnimationFrame(tick) : 0;
+}
+function finishAllAnims() {
+  // 途中のアニメーションを最後まで描き切る
+  for (const a of anims.splice(0)) a.step(Infinity);
+}
+
+/* =========================================================
+   絵の具のしみ(いびつな円)
+   ========================================================= */
+function makeBlob(R) {
+  const harm = [];
+  for (let k = 2; k <= 7; k++) {
+    harm.push({ k, a: rnd(0.03, 0.12) / Math.sqrt(k - 1), ph: rnd(0, Math.PI * 2) });
+  }
+  const tongues = [];
+  const nt = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < nt; i++) {
+    tongues.push({ ang: rnd(0, Math.PI * 2), amp: rnd(0.22, 0.5), w: rnd(0.12, 0.28) });
+  }
+  const N = 96, pts = [];
+  for (let i = 0; i < N; i++) {
+    const th = (i / N) * Math.PI * 2;
+    let r = 1;
+    for (const h of harm) r += h.a * Math.cos(h.k * th + h.ph);
+    for (const t of tongues) {
+      let d = Math.abs(th - t.ang) % (Math.PI * 2);
+      if (d > Math.PI) d = Math.PI * 2 - d;
+      r += t.amp * Math.exp(-(d * d) / (2 * t.w * t.w));
+    }
+    r = Math.max(0.45, r) * R;
+    pts.push({ x: Math.cos(th) * r, y: Math.sin(th) * r });
+  }
+  const drops = [];
+  const nd = 4 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < nd; i++) {
+    const a = rnd(0, Math.PI * 2), d = rnd(1.4, 2.05) * R;
+    drops.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, r: rnd(0.03, 0.09) * R });
+  }
+  return { pts, drops };
+}
+
+function blobPath(c, pts, cx, cy, s) {
+  const n = pts.length;
+  const mid = (a, b) => [(a.x + b.x) / 2, (a.y + b.y) / 2];
+  c.beginPath();
+  const m0 = mid(pts[n - 1], pts[0]);
+  c.moveTo(cx + m0[0] * s, cy + m0[1] * s);
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], q = pts[(i + 1) % n], m = mid(p, q);
+    c.quadraticCurveTo(cx + p.x * s, cy + p.y * s, cx + m[0] * s, cy + m[1] * s);
+  }
+  c.closePath();
+}
+
+function startBlob(cx, cy, R, color, delay = 0, dur = 540) {
+  const blob = makeBlob(R);
+  const t0 = performance.now() + delay;
+  const isWhite = color.toUpperCase() === '#FFFFFF';
+  addAnim({
+    step(now) {
+      if (now < t0) return false;
+      const t = clamp((now - t0) / dur, 0, 1);
+      const e = easeOutCubic(t);
+      ctx.fillStyle = color;
+      blobPath(ctx, blob.pts, cx, cy, e);
+      ctx.fill();
+      if (t > 0.55) {
+        const de = easeOutCubic((t - 0.55) / 0.45);
+        for (const d of blob.drops) {
+          ctx.beginPath();
+          ctx.arc(cx + d.x, cy + d.y, d.r * de, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      if (t >= 1) {
+        // 仕上げ: ふちの濃淡と、ぬれた光沢
+        ctx.save();
+        ctx.lineWidth = isWhite ? 2.5 : 2;
+        ctx.strokeStyle = isWhite ? 'rgba(80,60,30,.28)' : 'rgba(0,0,0,.13)';
+        blobPath(ctx, blob.pts, cx, cy, 1);
+        ctx.stroke();
+        for (const d of blob.drops) {
+          ctx.beginPath(); ctx.arc(cx + d.x, cy + d.y, d.r, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(255,255,255,.14)';
+        blobPath(ctx, blob.pts, cx - R * 0.12, cy - R * 0.12, 0.5);
+        ctx.fill();
+        ctx.restore();
+        return true;
+      }
+      return false;
+    }
+  });
+}
+
+/* =========================================================
+   模様(ハート・ダイヤ・肉球など)
+   円形に広がるように現れる(クリップを広げる)
+   ========================================================= */
+function strokeFill(c, color, lw) {
+  c.fillStyle = color; c.fill();
+  c.lineWidth = lw; c.strokeStyle = 'rgba(0,0,0,.16)'; c.stroke();
+}
+const SHAPES = {
+  heart(c, x, y, S, color) {
+    c.beginPath();
+    c.moveTo(x, y + S * 0.95);
+    c.bezierCurveTo(x + S * 1.25, y + S * 0.2, x + S * 0.95, y - S * 0.95, x, y - S * 0.35);
+    c.bezierCurveTo(x - S * 0.95, y - S * 0.95, x - S * 1.25, y + S * 0.2, x, y + S * 0.95);
+    c.closePath(); strokeFill(c, color, 2.5);
+  },
+  diamond(c, x, y, S, color) {
+    c.beginPath();
+    c.moveTo(x, y - S); c.lineTo(x + S * 0.72, y); c.lineTo(x, y + S); c.lineTo(x - S * 0.72, y);
+    c.closePath(); c.lineJoin = 'round'; strokeFill(c, color, 2.5);
+  },
+  question(c, x, y, S, color) {
+    c.font = `900 ${S * 2.3}px "Arial Rounded MT Bold","Arial Black",Arial,sans-serif`;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.lineJoin = 'round'; c.lineWidth = S * 0.12; c.strokeStyle = 'rgba(0,0,0,.16)';
+    c.strokeText('?', x, y + S * 0.05);
+    c.fillStyle = color; c.fillText('?', x, y + S * 0.05);
+  },
+  star(c, x, y, S, color) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 === 0 ? S : S * 0.45, a = -Math.PI / 2 + i * Math.PI / 5;
+      const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      i ? c.lineTo(px, py) : c.moveTo(px, py);
+    }
+    c.closePath(); c.lineJoin = 'round'; strokeFill(c, color, 2.5);
+  },
+  paw(c, x, y, S, color) {
+    const el = (ex, ey, rx, ry, rot) => {
+      c.beginPath(); c.ellipse(x + ex * S, y + ey * S, rx * S, ry * S, rot, 0, Math.PI * 2);
+      strokeFill(c, color, 2);
+    };
+    el(0, 0.38, 0.66, 0.52, 0);
+    el(-0.82, -0.02, 0.2, 0.3, -0.45);
+    el(-0.3, -0.56, 0.21, 0.31, -0.12);
+    el(0.3, -0.56, 0.21, 0.31, 0.12);
+    el(0.82, -0.02, 0.2, 0.3, 0.45);
+  },
+  alien(c, x, y, S) {
+    c.lineCap = 'round'; c.lineJoin = 'round';
+    // アンテナ
+    c.strokeStyle = '#3E9B2F'; c.lineWidth = S * 0.07;
+    for (const sd of [-1, 1]) {
+      c.beginPath(); c.moveTo(x + sd * S * 0.3, y - S * 0.8); c.lineTo(x + sd * S * 0.58, y - S * 1.22); c.stroke();
+      c.beginPath(); c.arc(x + sd * S * 0.6, y - S * 1.27, S * 0.1, 0, Math.PI * 2);
+      c.fillStyle = '#7ED957'; c.fill(); c.stroke();
+    }
+    // 頭
+    c.beginPath();
+    c.moveTo(x, y - S * 0.92);
+    c.bezierCurveTo(x + S * 1.0, y - S * 0.92, x + S * 1.12, y + S * 0.1, x + S * 0.36, y + S * 0.76);
+    c.quadraticCurveTo(x, y + S * 1.02, x - S * 0.36, y + S * 0.76);
+    c.bezierCurveTo(x - S * 1.12, y + S * 0.1, x - S * 1.0, y - S * 0.92, x, y - S * 0.92);
+    c.closePath();
+    c.fillStyle = '#7ED957'; c.fill(); c.lineWidth = S * 0.07; c.strokeStyle = '#3E9B2F'; c.stroke();
+    // 目
+    for (const sd of [-1, 1]) {
+      c.beginPath(); c.ellipse(x + sd * S * 0.4, y - S * 0.08, S * 0.27, S * 0.42, sd * 0.55, 0, Math.PI * 2);
+      c.fillStyle = '#1b1b2f'; c.fill();
+      c.beginPath(); c.arc(x + sd * S * 0.33, y - S * 0.22, S * 0.08, 0, Math.PI * 2);
+      c.fillStyle = '#fff'; c.fill();
+    }
+    // 口
+    c.beginPath(); c.arc(x, y + S * 0.38, S * 0.16, 0.15 * Math.PI, 0.85 * Math.PI);
+    c.lineWidth = S * 0.06; c.strokeStyle = '#2f6f25'; c.stroke();
+  },
+};
+
+function startMark(name, color) {
+  const m = Math.min(W, H);
+  const S = rnd(0.11, 0.18) * m;
+  const x = rnd(S, Math.max(S + 1, W - S)), y = rnd(S, Math.max(S + 1, H - S));
+  const rMax = S * 1.6, dur = 420, t0 = performance.now();
+  addAnim({
+    step(now) {
+      const t = clamp((now - t0) / dur, 0, 1);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(x, y, rMax * easeOutCubic(t), 0, Math.PI * 2); ctx.clip();
+      SHAPES[name](ctx, x, y, S, color);
+      ctx.restore();
+      return t >= 1;
+    }
+  });
+}
+
+/* =========================================================
+   絵全体を動かす(矢印・ズーム)
+   ========================================================= */
+function copyToTmp() {
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.drawImage(cv, 0, 0);
+}
+function applyShift(dx, dy) {
+  copyToTmp();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(tmp, Math.round(dx * DPR), Math.round(dy * DPR));
+  ctx.restore();
+}
+function startShift(ux, uy) {
+  const step = Math.min(W, H) * 0.09, dur = 260, t0 = performance.now();
+  const tx = ux * step, ty = uy * step;
+  let dx = 0, dy = 0;
+  addAnim({
+    step(now) {
+      const t = clamp((now - t0) / dur, 0, 1), e = easeOutCubic(t);
+      const nx = Math.round(tx * e), ny = Math.round(ty * e);
+      if (nx !== dx || ny !== dy) { applyShift(nx - dx, ny - dy); dx = nx; dy = ny; }
+      return t >= 1;
+    }
+  });
+}
+function applyScale(r) {
+  copyToTmp();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  const cx = cv.width / 2, cy = cv.height / 2;
+  ctx.translate(cx, cy); ctx.scale(r, r); ctx.translate(-cx, -cy);
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
+}
+function startZoom() {
+  const total = 0.3, dur = 380, t0 = performance.now();
+  let prev = 1;
+  addAnim({
+    step(now) {
+      const t = clamp((now - t0) / dur, 0, 1);
+      const s = 1 + total * easeOutCubic(t);
+      if (s !== prev) { applyScale(s / prev); prev = s; }
+      return t >= 1;
+    }
+  });
+}
+
+/* =========================================================
+   虹色スプラッシュ(Space)。画面の一部にとどめる
+   ========================================================= */
+function startRainbow() {
+  const m = Math.min(W, H), Rmax = rnd(0.17, 0.23) * m;
+  const cx = rnd(Rmax * 0.8, Math.max(Rmax * 0.8 + 1, W - Rmax * 0.8));
+  const cy = rnd(Rmax * 0.8, Math.max(Rmax * 0.8 + 1, H - Rmax * 0.8));
+  RAINBOW.forEach((col, i) => {
+    startBlob(cx, cy, Rmax * (1 - i * 0.12), col, i * 70, 480);
+  });
+}
+
+/* =========================================================
+   数字の一時表示
+   ========================================================= */
+function showDigit(ch) {
+  const fx = $('fx');
+  while (fx.children.length >= 6) fx.removeChild(fx.firstChild);
+  const d = document.createElement('div');
+  d.className = 'digit';
+  d.textContent = ch;
+  d.style.left = rnd(18, 82) + '%';
+  d.style.top = rnd(25, 75) + '%';
+  d.style.color = pick(MARK_COLORS);
+  fx.appendChild(d);
+  setTimeout(() => d.remove(), 1350);
+}
+
+/* =========================================================
+   声(ブラウザ標準の読み上げ / 録音ファイルへ差し替え可)
+   ========================================================= */
+let voiceObj = null;
+function pickVoice() {
+  if (!('speechSynthesis' in window)) return;
+  const vs = speechSynthesis.getVoices();
+  let best = null, bestScore = -1;
+  for (const v of vs) {
+    let s = 0;
+    if (/^en[-_]US/i.test(v.lang)) s += 6; else if (/^en/i.test(v.lang)) s += 3; else continue;
+    if (v.localService) s += 8;                                // ネット不要の声を優先
+    if (/zira|aria|jenny|samantha|google us/i.test(v.name)) s += 2;
+    if (s > bestScore) { best = v; bestScore = s; }
+  }
+  voiceObj = best;
+}
+if ('speechSynthesis' in window) {
+  pickVoice();
+  speechSynthesis.onvoiceschanged = pickVoice;
+}
+
+let curAudio = null, pendingWord = null, voiceTimer = null, lastVoiceAt = 0;
+
+function stopVoice() {
+  pendingWord = null;
+  if (voiceTimer) { clearTimeout(voiceTimer); voiceTimer = null; }
+  try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch (e) {}
+  if (curAudio) { try { curAudio.pause(); } catch (e) {} curAudio = null; }
+}
+function speakNow(word) {
+  const id = word.toLowerCase();
+  try {
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    if (curAudio) { curAudio.pause(); curAudio = null; }
+    if (AUDIO_OVERRIDES[id]) {
+      curAudio = new Audio(AUDIO_OVERRIDES[id]);
+      curAudio.play().catch(() => {});
+      return;
+    }
+    if (!('speechSynthesis' in window)) return;
+    const u = new SpeechSynthesisUtterance(word);
+    u.lang = 'en-US'; if (voiceObj) u.voice = voiceObj;
+    u.rate = 0.85; u.pitch = 1.2; u.volume = 1;
+    speechSynthesis.speak(u);
+  } catch (e) { /* 声が出せなくても絵は続ける */ }
+}
+// 連打されたら、間隔をあけて「最新の1つ」だけ鳴らす
+function say(word) {
+  pendingWord = word;
+  if (voiceTimer) return;
+  const wait = Math.max(0, lastVoiceAt + VOICE_GAP_MS - performance.now());
+  voiceTimer = setTimeout(() => {
+    voiceTimer = null;
+    const w = pendingWord; pendingWord = null;
+    if (!w) return;
+    lastVoiceAt = performance.now();
+    speakNow(w);
+  }, wait);
+}
+
+/* =========================================================
+   キー入力 → 反応
+   ========================================================= */
+function react(code) {
+  let m;
+  if ((m = /^Key([A-Z])$/.exec(code))) {
+    const L = m[1];
+    if (COLORS[L]) {
+      const [name, hex] = COLORS[L];
+      const mn = Math.min(W, H), R = rnd(0.08, 0.17) * mn;   // 大きさを変えたい時はここ
+      startBlob(rnd(0, W), rnd(0, H), R, hex);
+      say(name);
+      return;
+    }
+    const marks = {
+      D: ['Diamond',  () => startMark('diamond',  pick(MARK_COLORS))],
+      H: ['Heart',    () => startMark('heart',    pick(MARK_COLORS))],
+      Q: ['Question', () => startMark('question', pick(MARK_COLORS))],
+      X: ['X',        () => startMark('alien',    '#7ED957')],
+      Z: ['Zoom',     () => startZoom()],
+    };
+    const mk = marks[L];
+    if (mk) { say(mk[0]); mk[1](); return; }
+  }
+  if ((m = /^(?:Digit|Numpad)([0-9])$/.exec(code))) {
+    const n = +m[1];
+    showDigit(String(n)); say(DIGIT_WORDS[n]);
+    return;
+  }
+  switch (code) {
+    case 'Space':       startRainbow(); say('Splash'); return;
+    case 'Enter':
+    case 'NumpadEnter': startMark('paw', pick(MARK_COLORS)); say('Paw'); return;
+    case 'ArrowUp':     startShift(0, -1); say('Up');    return;
+    case 'ArrowRight':  startShift(1, 0);  say('Right'); return;
+    case 'ArrowDown':   startShift(0, 1);  say('Down');  return;
+    case 'ArrowLeft':   startShift(-1, 0); say('Left');  return;
+  }
+  // それ以外のキー(記号・Tab・Backspace・F1〜F12 など)は星
+  startMark('star', pick(MARK_COLORS));
+  say('Star');
+}
+
+/* =========================================================
+   状態管理: start → playing → result
+   ========================================================= */
+let state = 'start';
+let endAt = 0, timerId = 0;
+let dirty = false;                 // 最後に保存してから絵が変わったか
+let wantFullscreen = false, lastFsTry = 0;
+let lastVisualAt = 0;
+let previewUrl = null;
+
+async function enterFullscreen() {
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen();
+  } catch (e) { return; }
+  try {
+    if (navigator.keyboard && navigator.keyboard.lock) await navigator.keyboard.lock();
+  } catch (e) { /* 使えない環境でも続行 */ }
+}
+function leaveFullscreen() {
+  wantFullscreen = false;
+  try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+  try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) {}
+}
+
+function fmt(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function startTimer() {
+  endAt = performance.now() + SESSION_SECONDS * 1000;
+  clearInterval(timerId);
+  $('barTime').textContent = fmt(SESSION_SECONDS * 1000);
+  timerId = setInterval(() => {
+    const left = endAt - performance.now();
+    $('barTime').textContent = fmt(left);
+    if (left <= 0) endSession('time');
+  }, 250);
+}
+
+async function beginPlaying(fresh) {
+  state = 'playing';
+  document.body.classList.add('playing');
+  $('startScreen').classList.add('hidden');
+  $('resultScreen').classList.add('hidden');
+  wantFullscreen = true;
+  await enterFullscreen();
+  await nextFrame(); await nextFrame();
+  sizeCanvas(!fresh);
+  if (fresh) { fillPaper(); dirty = false; }
+  startTimer();
+}
+
+function endSession(reason) {
+  if (state !== 'playing') return;
+  state = 'result';
+  clearInterval(timerId);
+  cancelHold();
+  stopVoice();
+  finishAllAnims();
+  $('fx').textContent = '';
+  document.body.classList.remove('playing');
+  try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) {}
+  $('resultMsg').textContent = reason === 'time' ? '5分たちました。' : 'おしまいにしました。';
+  resetArmed();
+  cv.toBlob(blob => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = URL.createObjectURL(blob);
+    $('preview').src = previewUrl;
+    $('resultScreen').classList.remove('hidden');
+  }, 'image/png');
+}
+
+function saveImage() {
+  cv.toBlob(blob => {
+    const a = document.createElement('a');
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    a.download = `baby-art-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
+    a.href = URL.createObjectURL(blob);
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    dirty = false;
+    $('resultMsg').textContent = '保存しました(ダウンロードフォルダを確認してください)。';
+    resetArmed();
+  }, 'image/png');
+}
+
+/* 「保存していない絵が消える操作」は2回押しで確定 */
+let armedBtn = null, armTimer = 0;
+function resetArmed() {
+  if (armedBtn) { armedBtn.textContent = armedBtn.dataset.label; armedBtn.classList.remove('armed'); }
+  armedBtn = null; clearTimeout(armTimer);
+}
+function confirmable(btn, action) {
+  btn.dataset.label = btn.textContent;
+  btn.addEventListener('click', () => {
+    if (dirty && armedBtn !== btn) {
+      resetArmed();
+      armedBtn = btn;
+      btn.textContent = '保存していません。もう一度押すと消えます';
+      btn.classList.add('armed');
+      armTimer = setTimeout(resetArmed, 4000);
+      return;
+    }
+    resetArmed();
+    action();
+  });
+}
+
+$('startBtn').addEventListener('click', () => beginPlaying(true));
+$('saveBtn').addEventListener('click', saveImage);
+$('contBtn').addEventListener('click', () => beginPlaying(false));
+confirmable($('newBtn'), () => beginPlaying(true));
+confirmable($('quitBtn'), () => {
+  state = 'start';
+  leaveFullscreen();
+  $('resultScreen').classList.add('hidden');
+  $('startScreen').classList.remove('hidden');
+});
+
+/* ボタンにキーボードのフォーカスを渡さない(赤ちゃんがEnter/Spaceで押せないように) */
+document.querySelectorAll('button').forEach(b => {
+  b.addEventListener('mousedown', e => e.preventDefault());
+});
+document.addEventListener('focusin', e => { if (e.target && e.target.blur) e.target.blur(); });
+
+/* =========================================================
+   終了の長押し(Esc 3秒 / 画面下のバーを3秒)
+   ========================================================= */
+let holdStart = 0, holdTimer = 0;
+function beginHold() {
+  if (state !== 'playing' || holdTimer) return;
+  holdStart = performance.now();
+  holdTimer = setInterval(() => {
+    const p = clamp((performance.now() - holdStart) / HOLD_MS, 0, 1);
+    $('holdBar').style.width = (p * 100) + '%';
+    if (p >= 1) { cancelHold(); endSession('manual'); }
+  }, 40);
+}
+function cancelHold() {
+  if (holdTimer) { clearInterval(holdTimer); holdTimer = 0; }
+  $('holdBar').style.width = '0';
+}
+const bar = $('parentBar');
+bar.addEventListener('pointerdown', e => { e.preventDefault(); beginHold(); });
+['pointerup', 'pointerleave', 'pointercancel'].forEach(t => bar.addEventListener(t, cancelHold));
+window.addEventListener('blur', cancelHold);
+
+/* =========================================================
+   キーボードイベント
+   ========================================================= */
+window.addEventListener('keydown', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.code === 'Escape') { if (!e.repeat) beginHold(); return; }
+  if (state !== 'playing') return;
+  if (e.repeat) return;                       // 押しっぱなしは無視
+  if (IGNORE.has(e.code)) return;
+
+  // 全画面から出てしまった時は、次のキーで戻す
+  const now = performance.now();
+  if (wantFullscreen && !document.fullscreenElement && now - lastFsTry > 1500) {
+    lastFsTry = now; enterFullscreen();
+  }
+  if (now - lastVisualAt < VISUAL_GAP_MS) return;   // 連打の間引き
+  lastVisualAt = now;
+  dirty = true;
+  react(e.code);
+}, true);
+
+window.addEventListener('keyup', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.code === 'Escape') cancelHold();
+}, true);
+
+['contextmenu', 'dragstart', 'selectstart'].forEach(t =>
+  window.addEventListener(t, e => e.preventDefault()));
+
+/* Ctrl+W などで閉じそうになったら確認を出す */
+window.addEventListener('beforeunload', e => {
+  if (state === 'playing' || (state === 'result' && dirty)) {
+    e.preventDefault(); e.returnValue = '';
+  }
+});
+
+/* 初期化 */
+sizeCanvas(false);
+fillPaper();
+
+/* テスト用(動作確認にだけ使う) */
+window.__babyArt = { react, get state() { return state; }, endSession, anims };
+})();
+</script>
+</body>
+</html>
